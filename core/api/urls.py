@@ -1,9 +1,13 @@
-from django.urls import path
+from django.urls import path, re_path
+from rest_framework.routers import DefaultRouter
 from .views import *
 
 app_name = 'api'
 
-urlpatterns = [
-    path('delete-message/', delete_message, name='delete-message'),
-    path('stream-chat-events/', stream_chat_events, name='stream-chat-events'),
+router = DefaultRouter()
+router.register(r'chats', ChatViewSet, basename='chats')
+router.register(r'messages', MessageViewSet, basename='messages')
+
+urlpatterns = router.urls + [
+    re_path(r'^stream-chat-events/(?P<chat>\d+)?$', stream_chat_events, name='stream-chat-events'),
 ]

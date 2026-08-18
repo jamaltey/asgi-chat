@@ -1,70 +1,78 @@
 {% extends 'base.html' %}
 {% load static %}
 
+{% block title %}
+    {{ chat.name }}
+{% endblock %}
+
 {% block content %}
     <div class="chat-container">
 
         <div class="sidebar">
+            
             <div class="profile">
                 <img alt="Avatar" class="avatar" src="{{ user.pfp }}">
 
                 <h3>{{ user.username }}</h3>
 
+                <button class="btn" onclick="toggleTheme()">
+                    <i class="fas fa-circle-half-stroke"></i>
+                </button>
+
                 <form action="{% url 'accounts:logout' %}" method="post">
                     {% csrf_token %}
-                    <button type="submit" class="btn-logout">Logout</button>
+                    <button type="submit" class="btn btn-secondary">Logout</button>
                 </form>
             </div>
 
-            <nav>
-
-                <h2>Friends</h2>
-                <ul class="friend-list">
-                {% if friends %}
-                    {% for friend in friends %}
-                    <li class="friend">
-                        <span>{{ friend }}</span>
-                        <button class="btn-unfriend">Unfriend</button>
-                    </li>
+            <div class="d-flex justify-content-around mb-2">
+                <h2>Chats</h2>
+                <button id="new-chat-btn" class="btn">
+                    <i class="fa-regular fa-pen-to-square"></i>
+                </button>
+            </div>
+            <form style="display: none;" id="create-chat-form"> 
+                <input type="text" name="name" placeholder="Chat name">
+                <select name="members" multiple>
+                    {% for user in user.friends.all %}
+                        <option value="{{ user.username }}">{{ user.display_name }}</option>
                     {% endfor %}
-                {% else %}
-                    <li class="no-friends" id="no-friends">No friends</li>
-                {% endif %}
-                </ul>
+                </select>
+                <button class="btn btn-secondary" type="submit">Create</button>
+            </form>
 
-                <h2>Friend Requests</h2>
-                <ul class="friend-request-list">
-                {% if friend_requests %}
-                    {% for i in friend_requests %}
-                    <li class="friend-request">
-                        <span>{{ i.from_user }}</span>
-                        <button class="btn-accept">Accept</button>
-                        <button class="btn-reject">Reject</button>
-                    </li>
-                    {% endfor %}
-                {% else %}
-                    <li class="no-friends" id="no-friend-requests">No friend requests</li>
-                {% endif %}
-                </ul>
-
-            </nav>
+            <a class="chat" id="global-chat" href="{% url 'core:home' %}">
+                <img src="{% static 'icons/globe.svg' %}">
+                <h4 class="m-0">Global Chat</h4>
+            </a>
+            <ul class="chat-list">
+            {% for chat in user.chats.all %}
+                <li>
+                    <a class="chat" id="{{ chat.id }}" href="{% url 'core:chat' chat.id %}">
+                        <img src="{{ chat.icon_url }}">
+                        <span>{{ chat.name }}</span>
+                    </a>
+                </li>
+            {% endfor %}
+            </ul>
 
         </div>
 
+
         <div class="chat-section">
             <div class="chat-header">
-                <h2>Global Chat</h2>
-                <p id="typing-users"></p>
+                <h2>{{ chat.name }}</h2>
+                <p id="chat-members">{% if chat.id %}{{ chat.members.count }} members{% endif %}</p>
             </div>
             <div class="chat-messages" id="chat-messages">
-                {% for message in messages %}
+                {% for message in chat.messages.all %}
                 <div class="message {% if message.author == user %}own-message{% endif %}" id="{{ message.id }}">
                     
                     <div class="message-info">
                         <img alt="Avatar" src="{{ message.author.pfp }}">
 
-                        <span class="message-author">{{ message.author }}</span>
-                        <span class="timestamp">{{ message.timestamp | date:'Y-m-d H:i' }}Z</span>
+                        <span class="message-author">{{ message.author.display_name }}</span>
+                        <span class="timestamp">{{ message.timestamp | date:'c' }}</span>
     
                         {% if message.author == request.user %}
                         <div class="delete-message" onclick="deleteMessage('{{ message.id }}')">
@@ -82,9 +90,8 @@
             </div>
 
             <form class="message-form" id="message-form" method="post">
-                {% csrf_token %}
                 <input type="text" id="message-input" autocomplete="off" placeholder="Type a message...">
-                <button id="send-button">Send</button>
+                <button type="submit" id="send-btn">Send</button>
             </form>
 
         </div>
@@ -96,10 +103,16 @@
 {% block scripts %}
 <script>
     const username = "{{ user.username }}";
-    const csrftoken = $('[name=csrfmiddlewaretoken]').val();
+    const csrftoken = "{{ csrf_token }}";
+    const chatId = parseInt("{{ chat.id }}");
+
+    jQuery.ajaxSetup({
+        headers: { "X-CSRFToken": csrftoken },
+        traditional: true
+    });
 
     $(document).on('keydown', function(e) {
-        const focused = $('#message-input').is(':focus');
+        const focused = $('input').is(':focus');
         if (!focused && e.key.length == 1) {
             $('#message-input').focus();
         }
@@ -113,7 +126,7 @@
         const timestamp = $(this).text();
         $(this).text( formatDate(timestamp) );
     })
-    
+
     function formatDate(timestamp) {
         const date = new Date(timestamp);
         const now = new Date();
@@ -135,20 +148,19 @@
             return 'Yesterday, ' + date.toLocaleString([], options);
         } else if (isThisWeek) {
             return date.toLocaleString('en-US', {
-                weekday: 'long',
-                hour: '2-digit',
-                minute: '2-digit'
+                weekday: 'long', ...options
             });
         } else {
             return date.toLocaleDateString([], {
                 day: '2-digit',
                 month: '2-digit',
-                year: 'numeric'
-            }) + ' ' + date.toLocaleString([], options);
+                year: 'numeric',
+                ...options
+            })
         }
     }
 
 </script>
-<script src="{% static 'js/chat-events.js' %}"></script>
-<script src="{% static 'js/friends.js' %}"></script>
+<script src="{% static 'js/chat-events.js' %}??12"></script>
+<script src="{% static 'js/chat-creation.js' %}"></script>
 {% endblock %}

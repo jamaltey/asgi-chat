@@ -1,26 +1,25 @@
-from typing import Any
-from django.shortcuts import render
-from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.views.generic import *
+from django.shortcuts import redirect
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views.generic import DetailView
+from django.http import Http404, HttpResponse
 from core.models import *
 
-@login_required
-def chat(request: HttpRequest):
-    messages = Message.objects.all()
-    user: User = request.user
-    user.is_typing = False
-    user.save()
+class ChatView(LoginRequiredMixin, DetailView):
+    model = Chat
+    template_name = 'chat.html'
+    context_object_name = 'chat'
 
-    if request.method == 'POST':
-        text = request.POST.get('text')
-        if not text.isspace():
-            created_message = Message.objects.create(text=text, author=user)
-            return JsonResponse({'id': created_message.id})
-        return HttpResponse(status=400)
+    def get_queryset(self):
+        return self.request.user.chats.all()
 
-    context = {
-        'messages': messages, 'friends': user.friends.all(),
-        'friend_requests': user.friend_requests_received.all(),
-    }
-    return render(request, 'chat.html', context)
+    def dispatch(self, request, *args, **kwargs):
+        try: return super().dispatch(request, *args, **kwargs)
+        except Http404: return redirect('core:home')
+
+class GlobalChatView(ChatView):
+    def get_object(self, queryset=None):
+        return {
+            'id': 0,
+            'name': 'Global Chat',
+            'messages': Message.objects.filter(chat__isnull=True),
+        }

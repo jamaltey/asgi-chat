@@ -1,107 +1,136 @@
-const eventSource = new EventSource("api/stream-chat-events/")
+// username, csrftoken, and chatId are set in chat.html
+const chat = chatId || '' // Set current chat ID or empty string for global chat
 
-eventSource.onopen = function() {
+const eventSource = new EventSource('/api/stream-chat-events/' + chat);
+
+eventSource.onopen = () => {
     console.log("Connection established")
 }
-
-eventSource.onmessage = function(e) {
-    const data = JSON.parse(e.data)
+eventSource.onmessage = (event) => {
+    const data = JSON.parse(event.data)
     console.log(data)
-    if (data.action == 'create') {
-        const message = {...data.message}
-        message.timestamp = formatDate(message.timestamp + 'Z') // add 'Z' to make it UTC
-        renderMessage(message)
-    } else if (data.action == 'delete') {
-        $(`.message#${data.message_id}`).remove()
-    } else if (data.action == 'typing') {
-        renderTypingUsers(data.users)
+    switch (data.action) {
+        case 'create':
+            handleNewMessage(data.message);
+            break;
+        case 'delete':
+            $(`.message#${data.message_id}`).remove();
+            break;
+        case 'typing':
+            renderTypingUsers(data.users);
+            break;
+        default:
+            console.log('Unknown action:', data.action);
     }
 }
 
-function renderMessage(message){
-    if (!$(`.message#${message.id}`).length) { // check if message already exists
-        let messageElement = $('<div class="message">')
-        .prop('id', message.id)
-        .append($('<div class="message-info">')
-            .append(`<img src="${message.author.pfp}" alt="Avatar">`)
-            .append(`<span class="message-author">${message.author.username}</span>`)
-            .append(`<span class="timestamp">${message.timestamp}</span>`)
-        )
+function handleNewMessage(message) {
+    if (message.chat_id !== chatId) {
+        const $messageChat = $(`.chat#${message.chat_id}`);
+        const $unreadCount = $messageChat.find('.unread-count');
+        const unreadCount = $unreadCount.length ? parseInt($unreadCount.text()) : 0;
+        $unreadCount.text(unreadCount + 1);
 
-        .append($('<p class="message-text">')
-            .text(message.text)
-        )
+        if (!$unreadCount.length) {
+            $messageChat.append('<span class="unread-count">1</span>');
+        }
+        return;
+    }
 
-        if (message.author.username == username) {
-            messageElement.addClass('own-message')
+    message.timestamp = formatDate(message.timestamp + 'Z'); // add 'Z' to convert to UTC
+    renderMessage(message);
+}
+
+function renderMessage({ id, author, timestamp, text }) {
+    if ($(`.message#${id}`).length) {
+        return // Avoid rendering the same message multiple times
+    }
+
+    const $message = $(`
+        <div class="message" id="${id}">
+            <div class="message-info">
+                <img src="${author.pfp}" alt="Avatar">
+                <span class="message-author"></span>
+                <span class="timestamp">${timestamp}</span>
+            </div>
+            <p class="message-text"></p>
+        </div>
+    `);
+
+    // Set message content using .text() to prevent XSS
+    $message.find('.message-author').text(author.display_name);
+    $message.find('.message-text').text(text);
+
+    if (author.username === username) {
+        $message.addClass('own-message')
             .find('.message-info').append(
                 $('<div class="delete-message">')
-                    .on('click', ()=>{ deleteMessage(message.id) })
+                    .on('click', () => { deleteMessage(id) })
                     .append('<img src="/static/icons/remove.svg">')
-            )
-        }
-
-        $('#chat-messages').append(messageElement)
-        messageElement[0].scrollIntoView()
+            );
     }
+
+    $('#chat-messages').append($message);
+    $message[0].scrollIntoView();
 }
 
 function deleteMessage(messageId) {
-    $.post( `/api/delete-message/`, {
-        'message_id': messageId,
-        'csrfmiddlewaretoken': csrftoken
-    }, () => {
-        $(`.message#${messageId}`).remove()
+    $.ajax({
+        url: `/api/messages/${messageId}/`,
+        type: 'DELETE'
     })
 }
 
 // Send message
-$('#message-form').on('submit', function(event) {
+$('#message-form').on('submit', (event) => {
     event.preventDefault() // Prevent the form from submitting the traditional way
-    let text = $('#message-input').val()
+    const text = $('#message-input').val()
     if (text.trim()) { // check if message text is not empty
-        $.post(location.href, {
+        $.post('/api/messages/', {
+            'chat': chat,
             'text': text,
-            'csrfmiddlewaretoken': csrftoken
-        }, () => {
-            $('#message-input').val('') // Clear the message input
         })
     }
+    $('#message-input').val('')
 });
 
-// Typing status
-let typingTimeout
-let typingStatus = false
-$('#message-input').on('input', function(event) {
-    const text = $(this).val()
-    clearTimeout(typingTimeout)
-    if (!typingStatus && text) {
-        sendTypingStatus(true)
-    }
-    typingTimeout = setTimeout(() => {
-        if (typingStatus) {
-            sendTypingStatus(false)
-        }
-    }, 10000) // send not typing status after 10 seconds
-})
+// Typing indicator logic
+let typingTimeout;
+let isTyping = false;
 
-function sendTypingStatus(isTyping) {
-    typingStatus = isTyping
-    $.post('api/set-typing-status/', {
-        'csrfmiddlewaretoken': csrftoken,
-        'is_typing': isTyping
-    })
+$('#message-input').on('input', function() {
+    if (!chatId) {
+        return; // Skip typing status if in global chat
+    }
+    const text = $(this).val();
+    updateTypingStatus(!!text); // set isTyping to true if text is not empty
+
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(updateTypingStatus, 10000, false);
+});
+
+function updateTypingStatus(isTypingNow = true) {
+    if (isTypingNow !== isTyping) {
+        $.get(`/api/set-typing-status/${isTypingNow ? chatId : ''}`, () => {
+            isTyping = isTypingNow;
+        });
+    }
 }
 
+const $chatMembers = $('#chat-members');
+const initialChatMembersText = $chatMembers.text();
 function renderTypingUsers(users) {
-    if (users.length==1) {
-        $('#typing-users').text(`${users[0]} is typing...`)
-    } else if (users.length == 2) {
-        $('#typing-users').text(`${users[0]} and ${users[1]} are typing...`)
+    let text = initialChatMembersText;
+
+    if (users.length === 1) {
+        text = `${users[0]} is typing...`;
+    } else if (users.length === 2) {
+        text = `${users[0]} and ${users[1]} are typing...`;
     } else if (users.length > 2) {
-        $('#typing-users').text(`${users.join(', ')} are typing...`)
+        const firstTwoUsers = users.slice(0, 2).join(', ');
+        const othersCount = users.length - 2;
+        text = `${firstTwoUsers}, and ${othersCount} others are typing...`;
     }
-        else {
-        $('#typing-users').text(' ')
-    }
+
+    $chatMembers.text(text);
 }

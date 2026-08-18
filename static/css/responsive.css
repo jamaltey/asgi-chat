@@ -2,9 +2,9 @@
     .mobile {
         display: block;
     }
-    body{
+    /* body{
         height: 90vh;
-    }
+    } */
     .sidebar {
         display: none;
     }

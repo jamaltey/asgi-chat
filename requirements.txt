@@ -1,8 +1,5 @@
-asgiref
 daphne
-Django
+django
+pillow
 djangorestframework
-Pillow
-pytz
-sqlparse
 python-dotenv
